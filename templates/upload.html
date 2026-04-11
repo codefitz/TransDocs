@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TransDocs - Document Translation</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Source+Sans+3:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-start: #fef6ea;
+            --bg-end: #e8f4ef;
+            --panel: #ffffff;
+            --panel-border: #d9e8df;
+            --text: #1b2d2a;
+            --muted: #56716a;
+            --accent: #0f766e;
+            --accent-strong: #0b5e58;
+            --danger: #b42318;
+            --danger-bg: #fef3f2;
+            --success: #067647;
+            --success-bg: #ecfdf3;
+            --shadow: 0 16px 44px rgba(27, 45, 42, 0.12);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: "Source Sans 3", sans-serif;
+            color: var(--text);
+            background: radial-gradient(circle at 15% 10%, #fff7d6 0%, transparent 38%),
+                        radial-gradient(circle at 90% 90%, #d5f5e7 0%, transparent 35%),
+                        linear-gradient(165deg, var(--bg-start), var(--bg-end));
+            min-height: 100vh;
+            padding: 28px 14px 56px;
+        }
+
+        .shell {
+            max-width: 1020px;
+            margin: 0 auto;
+            animation: fade-in 0.55s ease-out;
+        }
+
+        .hero {
+            margin-bottom: 18px;
+            padding: 20px 22px;
+        }
+
+        h1, h2 {
+            margin: 0;
+            font-family: "Space Grotesk", sans-serif;
+            letter-spacing: -0.02em;
+        }
+
+        h1 {
+            font-size: clamp(1.7rem, 4.8vw, 2.5rem);
+        }
+
+        .subtitle {
+            margin-top: 7px;
+            color: var(--muted);
+            font-size: 1.05rem;
+        }
+
+        .layout {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 18px;
+        }
+
+        @media (min-width: 920px) {
+            .layout {
+                grid-template-columns: 1.1fr 0.9fr;
+                align-items: start;
+            }
+        }
+
+        .panel {
+            background: var(--panel);
+            border: 1px solid var(--panel-border);
+            border-radius: 18px;
+            box-shadow: var(--shadow);
+            padding: 22px;
+        }
+
+        .panel + .panel {
+            animation: rise-in 0.48s ease-out;
+        }
+
+        .section-title {
+            font-size: 1.2rem;
+            margin-bottom: 4px;
+        }
+
+        .section-note {
+            color: var(--muted);
+            margin-top: 0;
+            margin-bottom: 16px;
+        }
+
+        .form-row {
+            display: grid;
+            gap: 14px;
+            grid-template-columns: 1fr;
+            margin-bottom: 14px;
+        }
+
+        @media (min-width: 640px) {
+            .form-row.two {
+                grid-template-columns: 1fr 1fr;
+            }
+
+            .form-row.url {
+                grid-template-columns: 1fr auto;
+                align-items: end;
+            }
+        }
+
+        label {
+            display: block;
+            margin-bottom: 6px;
+            font-weight: 600;
+            color: #25423d;
+        }
+
+        input[type="text"],
+        input[type="password"],
+        select {
+            width: 100%;
+            border: 1px solid #bdd4cc;
+            border-radius: 12px;
+            padding: 10px 12px;
+            font: inherit;
+            color: var(--text);
+            background: #ffffff;
+            transition: border-color 0.18s ease, box-shadow 0.18s ease;
+        }
+
+        input:focus,
+        select:focus {
+            outline: none;
+            border-color: #1f9c8f;
+            box-shadow: 0 0 0 3px rgba(31, 156, 143, 0.2);
+        }
+
+        .btn {
+            border: 0;
+            border-radius: 12px;
+            padding: 11px 16px;
+            font: 600 0.98rem "Source Sans 3", sans-serif;
+            cursor: pointer;
+            transition: transform 0.18s ease, filter 0.18s ease;
+        }
+
+        .btn:hover {
+            transform: translateY(-1px);
+            filter: brightness(0.97);
+        }
+
+        .btn:disabled {
+            cursor: not-allowed;
+            transform: none;
+            opacity: 0.75;
+        }
+
+        .btn-query {
+            background: #e7f6f2;
+            color: #0d655e;
+            border: 1px solid #9fd9cb;
+            min-width: 112px;
+        }
+
+        .btn-submit {
+            width: 100%;
+            margin-top: 10px;
+            background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+            color: #fff;
+            font-size: 1.03rem;
+            padding: 13px;
+        }
+
+        .file-upload {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            border: 1px solid #bdd4cc;
+            border-radius: 12px;
+            padding: 9px 10px;
+            background: #fff;
+        }
+
+        .file-upload input[type="file"] {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .file-trigger {
+            display: inline-block;
+            border: 1px solid #9fd9cb;
+            border-radius: 10px;
+            padding: 8px 12px;
+            background: #e7f6f2;
+            color: #0d655e;
+            font-weight: 600;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+        .file-name {
+            color: var(--muted);
+            font-size: 0.95rem;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .alert {
+            border-radius: 12px;
+            padding: 11px 12px;
+            margin-bottom: 14px;
+            border: 1px solid transparent;
+            font-weight: 600;
+        }
+
+        .alert-danger {
+            color: var(--danger);
+            background: var(--danger-bg);
+            border-color: #fecaca;
+        }
+
+        .alert-success {
+            color: var(--success);
+            background: var(--success-bg);
+            border-color: #b7ebc8;
+        }
+
+        .help {
+            color: var(--muted);
+            font-size: 0.92rem;
+            margin-top: 6px;
+        }
+
+        .tips {
+            margin: 0;
+            padding-left: 18px;
+            color: #345954;
+        }
+
+        .tips li + li {
+            margin-top: 8px;
+        }
+
+        .footer-note {
+            margin-top: 16px;
+            color: var(--muted);
+            font-size: 0.92rem;
+        }
+
+        .progress-wrap {
+            margin-top: 14px;
+            display: none;
+        }
+
+        .progress-text {
+            margin: 0 0 8px;
+            color: #25423d;
+            font-weight: 600;
+        }
+
+        .progress-track {
+            width: 100%;
+            background: #e6efeb;
+            border-radius: 999px;
+            height: 12px;
+            overflow: hidden;
+            border: 1px solid #d0e1da;
+        }
+
+        .progress-fill {
+            width: 0%;
+            height: 100%;
+            background: linear-gradient(90deg, #0f766e, #1f9c8f);
+            transition: width 0.35s ease;
+        }
+
+        @keyframes fade-in {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes rise-in {
+            from { opacity: 0; transform: translateY(12px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body>
+<div class="shell">
+    <header class="hero">
+        <h1>Translate Your Document</h1>
+        <p class="subtitle">Upload a <code>.docx</code> or <code>.pdf</code> file, choose languages, and run translation or proofreading via Ollama or OpenAI-compatible APIs.</p>
+    </header>
+
+    <form method="post" enctype="multipart/form-data" id="translationForm" class="layout">
+        <section class="panel">
+            <h2 class="section-title">Connection & Model</h2>
+            <p class="section-note">Select backend, query available models, then choose one from the dropdown.</p>
+
+            {% if error %}
+            <div class="alert alert-danger">{{ error }}</div>
+            {% endif %}
+
+            <div class="form-row url">
+                <div>
+                    <label for="backend">Backend</label>
+                    <select id="backend" name="backend">
+                        <option value="ollama" {% if selected_backend == "ollama" %}selected{% endif %}>Ollama</option>
+                        <option value="openai_compatible" {% if selected_backend == "openai_compatible" %}selected{% endif %}>OpenAI-compatible</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="form-row url">
+                <div>
+                    <label for="api_url">API Base URL</label>
+                    <input type="text" id="api_url" name="api_url" placeholder="http://localhost:11434" value="{{ selected_api_url or 'http://localhost:11434' }}">
+                </div>
+                <button type="button" class="btn btn-query" id="queryBtn">Query</button>
+            </div>
+
+            <div id="connectionStatus" aria-live="polite"></div>
+
+            {% if available_models %}
+            <div class="alert alert-success">✓ Connected!</div>
+            {% endif %}
+
+            <div class="form-row">
+                <div>
+                    <label for="model">Model</label>
+                    <select id="model" name="model" required>
+                        <option value="">Select a model...</option>
+                        {% if available_models %}
+                            {% for model in available_models.split(', ') %}
+                            <option value="{{ model }}">{{ model }}</option>
+                            {% endfor %}
+                        {% endif %}
+                    </select>
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div>
+                    <label for="api_token">API Token (optional)</label>
+                    <input type="password" id="api_token" name="api_token" placeholder="Leave empty for local services">
+                    <p class="help">Needed only if your selected backend requires authentication.</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="panel">
+            <h2 class="section-title">Document Settings</h2>
+            <p class="section-note">Choose source/target languages and upload your file.</p>
+
+            <div class="form-row">
+                <div>
+                    <label for="input_file">Upload Document (.docx or .pdf)</label>
+                    <div class="file-upload">
+                        <input type="file" id="input_file" name="input_file" accept=".docx,.pdf" required>
+                        <label for="input_file" class="file-trigger">Choose File</label>
+                        <span class="file-name" id="fileName">No file selected</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-row two">
+                <div>
+                    <label for="src_lang">Source Language (optional)</label>
+                    <select id="src_lang" name="src_lang">
+                        <option value="">Auto-detect from document</option>
+                        <option value="en">English</option>
+                        <option value="de">German</option>
+                        <option value="fr">French</option>
+                        <option value="es">Spanish</option>
+                        <option value="it">Italian</option>
+                        <option value="pt">Portuguese</option>
+                        <option value="nl">Dutch</option>
+                        <option value="pl">Polish</option>
+                        <option value="ru">Russian</option>
+                        <option value="ja">Japanese</option>
+                        <option value="zh">Chinese (Simplified)</option>
+                        <option value="zh-TW">Chinese (Traditional)</option>
+                        <option value="ko">Korean</option>
+                        <option value="ar">Arabic</option>
+                        <option value="hi">Hindi</option>
+                        <option value="tr">Turkish</option>
+                        <option value="sv">Swedish</option>
+                        <option value="da">Danish</option>
+                        <option value="no">Norwegian</option>
+                        <option value="fi">Finnish</option>
+                        <option value="el">Greek</option>
+                        <option value="he">Hebrew</option>
+                        <option value="th">Thai</option>
+                        <option value="vi">Vietnamese</option>
+                        <option value="id">Indonesian</option>
+                        <option value="ms">Malay</option>
+                        <option value="cs">Czech</option>
+                        <option value="hu">Hungarian</option>
+                        <option value="ro">Romanian</option>
+                        <option value="uk">Ukrainian</option>
+                        <option value="sr-Latn">Serbian (Latin)</option>
+                        <option value="sr-Cyrl">Serbian (Cyrillic)</option>
+                        <option value="hr">Croatian</option>
+                        <option value="bs">Bosnian</option>
+                        <option value="sl">Slovenian</option>
+                        <option value="mk">Macedonian</option>
+                        <option value="sq">Albanian</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label for="target_lang">Target Language</label>
+                    <select id="target_lang" name="target_lang" required>
+                        <option value="">Select target language...</option>
+                        <option value="en">English</option>
+                        <option value="de">German</option>
+                        <option value="fr">French</option>
+                        <option value="es">Spanish</option>
+                        <option value="it">Italian</option>
+                        <option value="pt">Portuguese</option>
+                        <option value="nl">Dutch</option>
+                        <option value="pl">Polish</option>
+                        <option value="ru">Russian</option>
+                        <option value="ja">Japanese</option>
+                        <option value="zh">Chinese (Simplified)</option>
+                        <option value="zh-TW">Chinese (Traditional)</option>
+                        <option value="ko">Korean</option>
+                        <option value="ar">Arabic</option>
+                        <option value="hi">Hindi</option>
+                        <option value="tr">Turkish</option>
+                        <option value="sv">Swedish</option>
+                        <option value="da">Danish</option>
+                        <option value="no">Norwegian</option>
+                        <option value="fi">Finnish</option>
+                        <option value="el">Greek</option>
+                        <option value="he">Hebrew</option>
+                        <option value="th">Thai</option>
+                        <option value="vi">Vietnamese</option>
+                        <option value="id">Indonesian</option>
+                        <option value="ms">Malay</option>
+                        <option value="cs">Czech</option>
+                        <option value="hu">Hungarian</option>
+                        <option value="ro">Romanian</option>
+                        <option value="uk">Ukrainian</option>
+                        <option value="sr-Latn">Serbian (Latin)</option>
+                        <option value="sr-Cyrl">Serbian (Cyrillic)</option>
+                        <option value="hr">Croatian</option>
+                        <option value="bs">Bosnian</option>
+                        <option value="sl">Slovenian</option>
+                        <option value="mk">Macedonian</option>
+                        <option value="sq">Albanian</option>
+                    </select>
+                </div>
+            </div>
+
+            <button type="submit" class="btn btn-submit">Translate Document</button>
+            <div class="progress-wrap" id="progressWrap">
+                <p class="progress-text" id="progressText">Preparing...</p>
+                <div class="progress-track">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+            </div>
+
+            <p class="footer-note">Query first, then choose a model. For proofreading mode, set source and target to the same language.</p>
+        </section>
+    </form>
+</div>
+
+<script>
+(function () {
+    const queryBtn = document.getElementById('queryBtn');
+    const translationForm = document.getElementById('translationForm');
+    const backendSelect = document.getElementById('backend');
+    const apiUrlInput = document.getElementById('api_url');
+    const apiTokenInput = document.getElementById('api_token');
+    const modelSelect = document.getElementById('model');
+    const statusDiv = document.getElementById('connectionStatus');
+    const fileInput = document.getElementById('input_file');
+    const fileName = document.getElementById('fileName');
+    const submitBtn = translationForm.querySelector('button[type="submit"]');
+    const progressWrap = document.getElementById('progressWrap');
+    const progressText = document.getElementById('progressText');
+    const progressFill = document.getElementById('progressFill');
+    let pollTimer = null;
+
+    async function queryModels() {
+        const url = apiUrlInput.value.trim() || 'http://localhost:11434';
+
+        queryBtn.disabled = true;
+        queryBtn.textContent = 'Querying...';
+
+        try {
+            const response = await fetch('/query_models', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({
+                    api_url: url,
+                    backend: backendSelect.value,
+                    api_token: apiTokenInput.value
+                })
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                modelSelect.innerHTML = '<option value="">Select a model...</option>';
+                (data.models || []).forEach((model) => {
+                    const option = document.createElement('option');
+                    option.value = model;
+                    option.textContent = model;
+                    modelSelect.appendChild(option);
+                });
+                statusDiv.innerHTML = '<div class="alert alert-success">✓ Connected!</div>';
+            } else {
+                const details = data.details ? ('<br><small>' + data.details + '</small>') : '';
+                statusDiv.innerHTML = '<div class="alert alert-danger">Connection failed: ' + (data.error || 'Unknown error') + details + '</div>';
+            }
+        } catch (error) {
+            statusDiv.innerHTML = '<div class="alert alert-danger">Query failed: ' + error.message + '</div>';
+        } finally {
+            queryBtn.disabled = false;
+            queryBtn.textContent = 'Query';
+        }
+    }
+
+    function setBusy(isBusy) {
+        submitBtn.disabled = isBusy;
+        queryBtn.disabled = isBusy;
+        if (isBusy) {
+            submitBtn.textContent = 'Translating...';
+        } else {
+            submitBtn.textContent = 'Translate Document';
+        }
+    }
+
+    function showProgress(percent, text) {
+        progressWrap.style.display = 'block';
+        progressFill.style.width = Math.max(0, Math.min(100, percent)) + '%';
+        progressText.textContent = text;
+    }
+
+    async function pollStatus(jobId) {
+        try {
+            const response = await fetch('/translation_status/' + jobId);
+            const data = await response.json();
+            if (!data.success) {
+                throw new Error(data.error || 'Failed to fetch status');
+            }
+
+            let label = data.message || 'Processing...';
+            if (data.status === 'running' && data.total) {
+                label = 'Processing ' + (data.percent || 0) + '% (' + data.completed + '/' + data.total + ')';
+            }
+            showProgress(data.percent || 0, label || 'Processing...');
+
+            if (data.status === 'done') {
+                clearInterval(pollTimer);
+                pollTimer = null;
+                showProgress(100, 'Completed');
+                setBusy(false);
+                if (data.download_url) {
+                    window.location.href = data.download_url;
+                }
+            } else if (data.status === 'error') {
+                clearInterval(pollTimer);
+                pollTimer = null;
+                setBusy(false);
+                statusDiv.innerHTML = '<div class="alert alert-danger">Translation failed: ' + (data.error || 'Unknown error') + '</div>';
+            }
+        } catch (error) {
+            clearInterval(pollTimer);
+            pollTimer = null;
+            setBusy(false);
+            statusDiv.innerHTML = '<div class="alert alert-danger">Progress polling failed: ' + error.message + '</div>';
+        }
+    }
+
+    async function startTranslation(event) {
+        event.preventDefault();
+        statusDiv.innerHTML = '';
+        showProgress(0, 'Submitting job...');
+        setBusy(true);
+
+        const formData = new FormData(translationForm);
+
+        try {
+            const response = await fetch('/start_translation', {
+                method: 'POST',
+                body: formData
+            });
+            const data = await response.json();
+            if (!response.ok || !data.success) {
+                throw new Error(data.error || 'Failed to start translation');
+            }
+
+            showProgress(0, 'Job started');
+            pollStatus(data.job_id);
+            pollTimer = setInterval(function () {
+                pollStatus(data.job_id);
+            }, 1200);
+        } catch (error) {
+            setBusy(false);
+            progressWrap.style.display = 'none';
+            statusDiv.innerHTML = '<div class="alert alert-danger">' + error.message + '</div>';
+        }
+    }
+
+    queryBtn.addEventListener('click', queryModels);
+    translationForm.addEventListener('submit', startTranslation);
+    fileInput.addEventListener('change', function () {
+        fileName.textContent = fileInput.files.length ? fileInput.files[0].name : 'No file selected';
+    });
+})();
+</script>
+</body>
+</html>
