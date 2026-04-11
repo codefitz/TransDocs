@@ -3,25 +3,88 @@ Flask web application for TransDocs - Document Translation and Proofreading Tool
 """
 
 import os
+import logging
+import secrets
 import threading
+import time
 import uuid
+from urllib.parse import urlparse
 import requests as http_requests
-from flask import Flask, render_template, request, redirect, url_for, send_file, jsonify
+from flask import (
+    Flask,
+    abort,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    send_from_directory,
+    url_for,
+)
 from werkzeug.utils import secure_filename
 
 # Import from the src package
 from src.transdoc import process_document
 
+logger = logging.getLogger(__name__)
+
+
+def _int_env(name, default):
+    value = os.getenv(name)
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        logger.warning("Invalid integer for %s=%r, using %s", name, value, default)
+        return default
+
+
+def _is_debug_mode():
+    return os.getenv("FLASK_DEBUG", "").lower() in {"1", "true", "yes", "on"}
+
+
+def _allowed_api_hosts():
+    configured = os.getenv("TRANSDOC_ALLOWED_API_HOSTS", "")
+    if configured.strip():
+        return {host.strip().lower() for host in configured.split(",") if host.strip()}
+    return {"localhost", "127.0.0.1", "::1", "host.docker.internal"}
+
+
+def validate_api_url(api_url):
+    parsed = urlparse(api_url.strip())
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise ValueError("API URL must be a valid http(s) URL")
+
+    if parsed.hostname.lower() not in _allowed_api_hosts():
+        raise ValueError(
+            "API host is not allowed. Set TRANSDOC_ALLOWED_API_HOSTS to permit it."
+        )
+
+    return api_url.strip()
+
+
 app = Flask(__name__, template_folder="templates")  # Templates in templates/ subfolder
-app.secret_key = "your_secret_key"
+app.secret_key = os.getenv("FLASK_SECRET_KEY")
+if not app.secret_key:
+    if _is_debug_mode():
+        app.secret_key = "dev-secret-key"
+    else:
+        app.secret_key = secrets.token_hex(32)
+        logger.warning(
+            "FLASK_SECRET_KEY is not set; using an ephemeral secret key for this process."
+        )
 
 # Configure upload folder and allowed extensions
-UPLOAD_FOLDER = "uploads/"
-OUTPUT_FOLDER = "outputs/"
+UPLOAD_FOLDER = os.path.abspath("uploads")
+OUTPUT_FOLDER = os.path.abspath("outputs")
 ALLOWED_EXTENSIONS = {"docx", "pdf"}
+MAX_CONTENT_LENGTH = _int_env("TRANSDOC_MAX_UPLOAD_MB", 16) * 1024 * 1024
+JOB_RETENTION_SECONDS = _int_env("TRANSDOC_JOB_RETENTION_SECONDS", 3600)
+MAX_JOB_RECORDS = _int_env("TRANSDOC_MAX_JOB_RECORDS", 500)
 
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 app.config["OUTPUT_FOLDER"] = OUTPUT_FOLDER
+app.config["MAX_CONTENT_LENGTH"] = MAX_CONTENT_LENGTH
 
 # Ensure the upload and output directories exist
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -35,7 +98,35 @@ def allowed_file(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
+def cleanup_jobs(now=None):
+    now = now or time.time()
+    with TRANSLATION_JOBS_LOCK:
+        expired_job_ids = [
+            job_id
+            for job_id, job in TRANSLATION_JOBS.items()
+            if job.get("status") in {"done", "error"} and (now - job.get("updated_at", now) > JOB_RETENTION_SECONDS)
+        ]
+        for job_id in expired_job_ids:
+            TRANSLATION_JOBS.pop(job_id, None)
+
+        if len(TRANSLATION_JOBS) <= MAX_JOB_RECORDS:
+            return
+
+        removable_jobs = sorted(
+            (
+                (job.get("updated_at", 0), job_id)
+                for job_id, job in TRANSLATION_JOBS.items()
+                if job.get("status") in {"done", "error"}
+            )
+        )
+        while len(TRANSLATION_JOBS) > MAX_JOB_RECORDS and removable_jobs:
+            _, job_id = removable_jobs.pop(0)
+            TRANSLATION_JOBS.pop(job_id, None)
+
+
 def create_job_state(job_id, filename):
+    cleanup_jobs()
+    now = time.time()
     with TRANSLATION_JOBS_LOCK:
         TRANSLATION_JOBS[job_id] = {
             "id": job_id,
@@ -46,16 +137,23 @@ def create_job_state(job_id, filename):
             "total": 0,
             "percent": 0,
             "output_filename": filename,
+            "created_at": now,
+            "updated_at": now,
         }
 
 
 def update_job_state(job_id, **updates):
+    cleanup_jobs()
     with TRANSLATION_JOBS_LOCK:
         if job_id in TRANSLATION_JOBS:
+            updates.setdefault("updated_at", time.time())
+            if updates.get("status") in {"done", "error"}:
+                updates.setdefault("finished_at", updates["updated_at"])
             TRANSLATION_JOBS[job_id].update(updates)
 
 
 def get_job_state(job_id):
+    cleanup_jobs()
     with TRANSLATION_JOBS_LOCK:
         job = TRANSLATION_JOBS.get(job_id)
         return dict(job) if job else None
@@ -168,6 +266,24 @@ def extract_model_names(data):
     return [m.get("name") for m in items if isinstance(m, dict) and m.get("name")]
 
 
+@app.errorhandler(413)
+def request_entity_too_large(_error):
+    message = f"Uploaded file is too large. Maximum size is {MAX_CONTENT_LENGTH // (1024 * 1024)} MB."
+    if request.path == "/start_translation":
+        return jsonify({"success": False, "error": message}), 413
+    return (
+        render_template(
+            "upload.html",
+            error=message,
+            selected_backend=request.form.get("backend", "ollama").strip() or "ollama",
+            selected_api_url=request.form.get(
+                "api_url", "http://localhost:11434"
+            ).strip(),
+        ),
+        413,
+    )
+
+
 @app.route("/query_ollama", methods=["POST"])  # backward-compatible endpoint name
 @app.route("/query_models", methods=["POST"])
 def query_models():
@@ -177,6 +293,10 @@ def query_models():
     api_token = request.form.get("api_token", "").strip() or None
     if backend not in {"ollama", "openai_compatible"}:
         backend = "ollama"
+    try:
+        api_url = validate_api_url(api_url)
+    except ValueError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
     models_urls = build_models_endpoints(api_url, backend)
     headers = {}
     if api_token:
@@ -221,6 +341,10 @@ def start_translation():
 
     if backend not in {"ollama", "openai_compatible"}:
         backend = "ollama"
+    try:
+        api_url = validate_api_url(api_url)
+    except ValueError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
 
     if not model:
         return jsonify({"success": False, "error": "Please select a valid model"}), 400
@@ -298,6 +422,18 @@ def upload_file():
             api_url = request.form.get("api_url", "http://localhost:11434").strip()
             backend = request.form.get("backend", "ollama").strip() or "ollama"
             api_token = request.form.get("api_token", "").strip() or None
+            if backend not in {"ollama", "openai_compatible"}:
+                backend = "ollama"
+            try:
+                api_url = validate_api_url(api_url)
+            except ValueError as exc:
+                return render_template(
+                    "upload.html",
+                    connection_result=f"✗ Connection failed!<br>Error: {str(exc)}",
+                    connection_success=False,
+                    selected_backend=backend,
+                    selected_api_url=api_url,
+                )
             models_urls = build_models_endpoints(api_url, backend)
             headers = {}
             if api_token:
@@ -376,8 +512,18 @@ def upload_file():
         model = model.strip()
 
         api_url = request.form.get("api_url", "http://localhost:11434").strip()
+        try:
+            api_url = validate_api_url(api_url)
+        except ValueError as exc:
+            return render_template(
+                "upload.html",
+                error=str(exc),
+                selected_backend=backend,
+                selected_api_url=request.form.get(
+                    "api_url", "http://localhost:11434"
+                ).strip(),
+            )
 
-        logger = __import__("logging").getLogger(__name__)
         logger.debug(f"Using backend '{backend}' with API base URL: {api_url}")
 
         if not target_lang:
@@ -392,7 +538,9 @@ def upload_file():
             filename = secure_filename(file.filename)
             input_filepath = os.path.join(app.config["UPLOAD_FOLDER"], filename)
             input_base_name = os.path.splitext(filename)[0]
-            output_filename = f"translated_{input_base_name}.docx"
+            input_extension = os.path.splitext(filename)[1].lower()
+            output_extension = ".pdf" if input_extension == ".pdf" else ".docx"
+            output_filename = f"translated_{input_base_name}{output_extension}"
             output_filepath = os.path.join(app.config["OUTPUT_FOLDER"], output_filename)
             file.save(input_filepath)
 
@@ -434,8 +582,11 @@ def upload_file():
 
 @app.route("/downloads/<filename>")
 def download_file(filename):
-    return send_file(
-        os.path.join(app.config["OUTPUT_FOLDER"], filename), as_attachment=True
+    safe_filename = secure_filename(filename)
+    if not safe_filename or safe_filename != filename:
+        abort(404)
+    return send_from_directory(
+        app.config["OUTPUT_FOLDER"], safe_filename, as_attachment=True
     )
 
 

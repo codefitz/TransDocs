@@ -6,7 +6,7 @@ Supports automatic language detection, professional translation quality,
 and proofreading capabilities.
 """
 
-__version__ = "1.2.0"
+__version__ = "1.4.0"
 __author__ = "Wes Moskal-Fitzpatrick (adapted)"
 
 from .transdoc import (

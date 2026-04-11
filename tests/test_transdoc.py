@@ -1,11 +1,7 @@
-"""
-Unit tests for TransDocs - Document Translation and Proofreading Tool.
-"""
-
+import os
+import sys
 import unittest
 from unittest.mock import Mock, patch
-import sys
-import os
 
 # Add src directory to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
@@ -19,8 +15,8 @@ class TestTransDoc(unittest.TestCase):
         self.test_doc_path = "test_document.docx"
         self.output_doc_path = "output_test.docx"
 
-    @patch("transdoc.Document")
-    def test_detect_source_language_en(self, mock_doc_class):
+    @patch("transdoc.detect", return_value="en")
+    def test_detect_source_language_en(self, mock_detect):
         """Test source language detection for English text."""
         # Mock document with English paragraphs - each paragraph needs runs attribute
         mock_run1 = Mock()
@@ -37,15 +33,15 @@ class TestTransDoc(unittest.TestCase):
 
         mock_doc = Mock()
         mock_doc.paragraphs = [mock_para1, mock_para2]
-        mock_doc_class.return_value = mock_doc
 
         from transdoc import detect_source_language
 
-        result = detect_source_language(mock_doc)
+        result = detect_source_language(mock_doc, min_words=5)
         self.assertEqual(result, "en")
+        mock_detect.assert_called_once()
 
-    @patch("transdoc.Document")
-    def test_detect_source_language_de(self, mock_doc_class):
+    @patch("transdoc.detect", return_value="de")
+    def test_detect_source_language_de(self, mock_detect):
         """Test source language detection for German text."""
         # Mock document with German paragraphs - each paragraph needs runs attribute
         mock_run1 = Mock()
@@ -62,18 +58,15 @@ class TestTransDoc(unittest.TestCase):
 
         mock_doc = Mock()
         mock_doc.paragraphs = [mock_para1, mock_para2]
-        mock_doc_class.return_value = mock_doc
 
         from transdoc import detect_source_language
 
-        result = detect_source_language(mock_doc)
+        result = detect_source_language(mock_doc, min_words=5)
         self.assertEqual(result, "de")
+        mock_detect.assert_called_once()
 
     @patch("transdoc.detect")
-    @patch("transdoc.Document")
-    def test_detect_source_language_insufficient_text(
-        self, mock_doc_class, mock_detect
-    ):
+    def test_detect_source_language_insufficient_text(self, mock_detect):
         """Test language detection with insufficient text."""
         # Mock document with very little text - paragraph needs runs attribute
         mock_run1 = Mock()
@@ -84,7 +77,6 @@ class TestTransDoc(unittest.TestCase):
 
         mock_doc = Mock()
         mock_doc.paragraphs = [mock_para1]
-        mock_doc_class.return_value = mock_doc
 
         # Make detect raise an exception for short text
         from langdetect.lang_detect_exception import LangDetectException
@@ -226,6 +218,74 @@ class TestTransDoc(unittest.TestCase):
         )
 
         # Should not fail on empty paragraph
+
+    def test_build_chat_endpoints_normalizes_endpoint_inputs(self):
+        """Test chat endpoint construction from base and endpoint URLs."""
+        from transdoc import build_chat_endpoints
+
+        self.assertEqual(
+            build_chat_endpoints("http://localhost:11434/api/generate", "ollama"),
+            [
+                "http://localhost:11434/api/chat",
+                "http://localhost:11434/v1/chat/completions",
+            ],
+        )
+        self.assertEqual(
+            build_chat_endpoints(
+                "https://api.example.com/v1/chat/completions",
+                "openai_compatible",
+            ),
+            [
+                "https://api.example.com/v1/chat/completions",
+                "https://api.example.com/api/chat",
+            ],
+        )
+
+    @patch("transdoc.requests.post")
+    def test_call_ollama_api_normalizes_generate_endpoint(self, mock_post):
+        """Test that legacy Ollama generate URLs are normalized to chat URLs."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"response": "Translated"}
+        mock_response.headers = {}
+        mock_response.text = '{"response": "Translated"}'
+        mock_post.return_value = mock_response
+
+        from transdoc import call_ollama_api
+
+        result = call_ollama_api(
+            text="Hello world",
+            src_lang="en",
+            target_lang="de",
+            model="qwen2.5-coder:1.5b-base",
+            api_token=None,
+            api_url="http://localhost:11434/api/generate",
+            mode="translate",
+        )
+
+        self.assertEqual(result, "Translated")
+        self.assertEqual(mock_post.call_args.args[0], "http://localhost:11434/api/chat")
+
+    @patch("transdoc.detect_source_language", return_value=None)
+    @patch("transdoc.Document")
+    def test_process_document_raises_on_detection_failure(
+        self, mock_document, mock_detect_source_language
+    ):
+        """Test that document processing fails fast when detection fails."""
+        mock_document.return_value = Mock(paragraphs=[], tables=[], sections=[])
+
+        from transdoc import process_document
+
+        with self.assertRaises(RuntimeError):
+            process_document(
+                input_file="input.docx",
+                output_file="output.docx",
+                model="qwen2.5-coder:1.5b-base",
+                target_lang="de",
+                api_token=None,
+            )
+
+        mock_detect_source_language.assert_called_once()
 
 
 class TestCLIArguments(unittest.TestCase):

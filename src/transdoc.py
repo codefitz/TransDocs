@@ -30,9 +30,13 @@ class ColorFormatter(logging.Formatter):
     RESET = "\033[0m"  # Reset color
 
     def format(self, record):
-        log_color = self.COLORS.get(record.levelname, self.RESET)
-        record.levelname = f"{log_color}{record.levelname}{self.RESET}"
-        return super().format(record)
+        original_levelname = record.levelname
+        log_color = self.COLORS.get(original_levelname, self.RESET)
+        record.levelname = f"{log_color}{original_levelname}{self.RESET}"
+        try:
+            return super().format(record)
+        finally:
+            record.levelname = original_levelname
 
 
 # Logging configuration
@@ -234,8 +238,7 @@ def translate_pdf_layout_to_pdf(
         logger.info("Detecting source language...")
         src_lang = detect_language_from_blocks(text_blocks)
         if not src_lang:
-            logger.error("Source language detection failed. Exiting.")
-            return
+            raise RuntimeError("Source language detection failed.")
 
     if force_proofread:
         logger.info("Running in PROOFREADING mode (explicit --proofread flag).")
@@ -308,32 +311,34 @@ def build_chat_endpoints(api_url, backend):
         if url not in endpoints:
             endpoints.append(url)
 
+    def strip_suffix(url, suffixes):
+        for suffix in sorted(suffixes, key=len, reverse=True):
+            if url.endswith(suffix):
+                trimmed = url[: -len(suffix)].rstrip("/")
+                return trimmed or url[: -len(suffix)]
+        return url
+
+    base_root = strip_suffix(
+        base_url,
+        (
+            "/v1/chat/completions",
+            "/chat/completions",
+            "/api/chat",
+            "/api/generate",
+            "/v1",
+        ),
+    )
+
     if backend == "openai_compatible":
-        if base_url.endswith(("/v1/chat/completions", "/chat/completions")):
-            add(base_url)
-        elif base_url.endswith("/v1"):
-            add(f"{base_url}/chat/completions")
-        else:
-            add(f"{base_url}/v1/chat/completions")
+        add(f"{base_root}/v1/chat/completions")
         # Fallback for gateways exposing Ollama-style endpoints
-        if base_url.endswith("/api/chat"):
-            add(base_url)
-        else:
-            add(f"{base_url}/api/chat")
+        add(f"{base_root}/api/chat")
         return endpoints
 
     # Default: ollama
-    if base_url.endswith(("/api/chat", "/api/generate")):
-        add(base_url)
-    else:
-        add(f"{base_url}/api/chat")
+    add(f"{base_root}/api/chat")
     # Fallback for gateways exposing OpenAI-compatible endpoints
-    if base_url.endswith(("/v1/chat/completions", "/chat/completions")):
-        add(base_url)
-    elif base_url.endswith("/v1"):
-        add(f"{base_url}/chat/completions")
-    else:
-        add(f"{base_url}/v1/chat/completions")
+    add(f"{base_root}/v1/chat/completions")
     return endpoints
 
 
@@ -439,7 +444,9 @@ Text: {text}"""
             logger.debug(f"Request headers: {headers}")
             logger.debug("HTTP method being used: POST")
 
-            response = requests.post(endpoint_url, json=payload, headers=headers)
+            response = requests.post(
+                endpoint_url, json=payload, headers=headers, timeout=60
+            )
             logger.debug(f"Response status code: {response.status_code}")
             logger.debug(f"Response headers: {dict(response.headers)}")
             logger.debug(f"Response body (raw): {response.text[:500]}")
@@ -634,8 +641,7 @@ def process_document(
                 logger.info("Detecting source language...")
                 src_lang = detect_language_from_blocks(text_blocks)
                 if not src_lang:
-                    logger.error("Source language detection failed. Exiting.")
-                    return
+                    raise RuntimeError("Source language detection failed.")
 
             if force_proofread:
                 logger.info("Running in PROOFREADING mode (explicit --proofread flag).")
@@ -687,8 +693,7 @@ def process_document(
             logger.info("Detecting source language...")
             src_lang = detect_source_language(doc)
             if not src_lang:
-                logger.error("Source language detection failed. Exiting.")
-                return
+                raise RuntimeError("Source language detection failed.")
 
         # Check if we need proofreading or translation
         if force_proofread:
@@ -836,10 +841,8 @@ def main():
     if not args.model or not args.model.strip():
         parser.error("Model name (-m/--model) is required")
 
-    api_url = build_chat_endpoint(args.api_url, args.backend)
-
     logger.info(
-        f"Starting processing with backend '{args.backend}' and API URL: {api_url}"
+        f"Starting processing with backend '{args.backend}' and API URL: {args.api_url}"
     )
     process_document(
         args.input_file,
@@ -848,7 +851,7 @@ def main():
         args.target_lang,
         args.api_token,
         args.src_lang,
-        api_url,
+        args.api_url,
         force_proofread=args.proofread,
         backend=args.backend,
     )

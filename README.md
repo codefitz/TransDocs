@@ -80,7 +80,7 @@ Speed depends on doc size, number of paragraphs, and hardware. On CPU-only syste
 1. **Clone the Repository**
 
    ```bash
-   git clone https://github.com/sasakocic/TransDocs.git
+   git clone https://github.com/codefitz/TransDocs.git
    cd TransDocs
    ```
 
@@ -127,7 +127,7 @@ The script `src/transdoc.py` can be executed from the command line to translate 
 1. **Translate a Document with Automatic Source Language Detection**
 
    ```bash
-   python src/transdoc.py -i input.docx -o output.docx -t en
+   python src/transdoc.py -i input.docx -o output.docx -t en -m llama3.2
    ```
 
    This command translates `input.docx` to English, saving the result as `output.docx`. The script will detect the source language automatically. No API token required for local Ollama without authentication.
@@ -135,7 +135,7 @@ The script `src/transdoc.py` can be executed from the command line to translate 
 2. **Translate a Document with Specified Source Language**
 
    ```bash
-   python src/transdoc.py -i input.docx -o output.docx -t en -s fr
+   python src/transdoc.py -i input.docx -o output.docx -t en -s fr -m llama3.2
    ```
 
    This command translates `input.docx` from French to English.
@@ -151,7 +151,7 @@ The script `src/transdoc.py` can be executed from the command line to translate 
 4. **Translate Using a Remote Ollama Instance**
 
    ```bash
-   python src/transdoc.py -i input.docx -o output.docx -t de -u http://192.168.1.50:11434/
+   python src/transdoc.py -i input.docx -o output.docx -t de -u http://192.168.1.50:11434/ -m llama3.2
    ```
 
    This command connects to a remote Ollama server at `http://192.168.1.50:11434/`. The script automatically appends `/api/chat`.
@@ -167,7 +167,7 @@ The script `src/transdoc.py` can be executed from the command line to translate 
 5. **Proofread a Document (Same Language)**
 
    ```bash
-   python src/transdoc.py -i document.docx -o corrected.docx -s en -t en
+   python src/transdoc.py -i document.docx -o corrected.docx -s en -t en -m llama3.2
    ```
 
    When source and target languages are the same, the script automatically runs in proofreading mode to fix grammar, spelling, and clarity issues.
@@ -175,7 +175,7 @@ The script `src/transdoc.py` can be executed from the command line to translate 
 6. **Force Proofreading Mode**
 
    ```bash
-   python src/transdoc.py -i document.docx -o corrected.docx -s en -t de --proofread
+   python src/transdoc.py -i document.docx -o corrected.docx -s en -t de --proofread -m llama3.2
    ```
 
    The `--proofread` flag forces proofreading mode even when source and target languages differ.
@@ -205,6 +205,7 @@ A web-based interface is available via `transdoc_app.py`.
 1. **Start the Flask Application**
 
    ```bash
+   export FLASK_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_hex(32))')"
    python transdoc_app.py
    ```
 
@@ -226,6 +227,8 @@ A web-based interface is available via `transdoc_app.py`.
 4. **Download the Translated Document**
 
    After the translation is complete, you'll be redirected to a page where you can download the translated document.
+
+The web app only permits API hosts listed in `TRANSDOC_ALLOWED_API_HOSTS` and defaults to loopback-style hosts such as `localhost`. Set that environment variable if you need to query a remote model endpoint, and use `TRANSDOC_MAX_UPLOAD_MB` to adjust the default 16 MB upload limit.
 
 ## Testing
 
